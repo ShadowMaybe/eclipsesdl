@@ -128,6 +128,21 @@ public final class EclipseHIDDeviceManager {
 
     public native void HIDDeviceRegisterCallback();
 
+    /**
+     * Releases the two global references native holds and lets a later
+     * {@code initialize()} run again.
+     *
+     * <p>Nothing in this build calls it, and that is deliberate rather than an
+     * oversight. Releasing would leave native without a callback handler, and
+     * {@link #ensureCreated(Context)} is one-shot for the life of the process, so
+     * no second {@code HIDDeviceRegisterCallback()} would ever replace it — HID
+     * would be gone for good instead of merely re-initialised. The two references
+     * it frees are held until the process exits, which is bounded and costs
+     * nothing an app can observe.
+     *
+     * <p>Called from a future path that also re-runs registration would be the
+     * point to start using it.
+     */
     public native void HIDDeviceReleaseCallback();
 
     /**

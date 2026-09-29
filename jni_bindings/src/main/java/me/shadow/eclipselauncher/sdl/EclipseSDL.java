@@ -948,13 +948,16 @@ public final class EclipseSDL {
      * Asks for one runtime permission.
      *
      * <p>Answers inline: native has already recorded the request and is waiting for
-     * {@link #nativePermissionResult(int, boolean)}, so a false here means nobody ever will.
-     *
-     * @return true when the system now owns the request, false when it could not be made
+     * {@link #nativePermissionResult(int, boolean)}, so every path out of here has to
+     * send one — a path that returns without it leaves the app waiting forever.
      */
     public static void requestPermission(String permission, int requestCode) {
         Activity activity = sActivity;
         if (activity == null) {
+            // Native queued the request before calling in, so refuse it rather than
+            // leave an entry nothing will ever pop. Nothing was remembered yet, so
+            // there is nothing to forget.
+            nativePermissionResult(requestCode, false);
             return;
         }
         rememberPermissionRequest(requestCode);

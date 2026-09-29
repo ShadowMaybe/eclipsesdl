@@ -144,9 +144,14 @@ public final class EclipseAudioManager {
     }
 
     /**
-     * Called by SDL through JNI when audio hotplug stops. The devices stay in
-     * SDL's list — SDL withdrew them itself — so this only stops the reports
-     * and keeps our bookkeeping for the next registration to reconcile.
+     * Called by SDL through JNI when audio hotplug stops.
+     *
+     * <p>SDL destroys every physical device it owns before this runs — SDL_QuitAudio
+     * empties the device hash and only then calls Deinitialize, which is where this
+     * comes from — so SDL's side is already empty and ours has to become empty too.
+     * Leaving it populated would make the next registration's dedup throw away every
+     * device on the list, announce nothing, and leave SDL with no default playback
+     * device at all for that session.
      */
     public static void unregisterAudioDeviceCallback() {
         final AudioManager manager;
@@ -156,6 +161,7 @@ public final class EclipseAudioManager {
                 return;
             }
             sRegistered = false;
+            sReported.clear();
             manager = sModernManager;
             sModernManager = null;
             receiver = sHeadsetReceiver;
