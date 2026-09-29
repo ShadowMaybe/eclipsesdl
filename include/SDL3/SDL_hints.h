@@ -168,6 +168,77 @@ extern "C" {
 #define SDL_HINT_ANDROID_TRAP_BACK_BUTTON "SDL_ANDROID_TRAP_BACK_BUTTON"
 
 /**
+ * A variable controlling whether SDL takes the GL driver from eclipseexec.
+ *
+ * eclipseexec is the Eclipse Launcher's native bootstrap layer. The launcher
+ * asks it to open the GL driver before the game starts — through a private
+ * linker namespace when the driver lives somewhere Android will not look — and
+ * SDL asks eclipseexec for that open handle instead of dlopen()ing a GL library
+ * itself. Set this hint to "0" to make SDL load the driver its own way, which
+ * is worth doing when working out whether a rendering problem belongs to the
+ * driver or to the handover.
+ *
+ * When SDL gets nothing from eclipseexec it falls back to the normal load and
+ * logs why, so leaving this on never costs more than a call that answers "no".
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": SDL loads the GL driver itself. (default: the driver the launcher
+ *   prepared, when eclipseexec is built in)
+ * - "1": SDL asks eclipseexec for the driver the launcher prepared.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.16.
+ */
+#define SDL_HINT_ECLIPSE_GL_DRIVER "SDL_ECLIPSE_GL_DRIVER"
+
+/**
+ * A variable controlling whether SDL takes the Vulkan loader from eclipseexec.
+ *
+ * When the launcher has selected the Turnip driver, eclipseexec opens it ahead
+ * of time and puts an interposer in front of the system loader so the driver
+ * answers for the hardware ICD. This hint decides whether SDL asks for that
+ * handle or loads "libvulkan.so" itself.
+ *
+ * SDL_ECLIPSE_VULKAN_DRIVER also governs SDL_EclipsePreloadVulkan, so turning
+ * it off stops SDL warming the driver up before the first frame as well as
+ * stopping the handover.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": SDL loads the Vulkan loader itself. (default: the loader the launcher
+ *   prepared, when eclipseexec is built in)
+ * - "1": SDL asks eclipseexec for the loader the launcher prepared.
+ *
+ * This hint can be set anytime.
+ *
+ * \since This hint is available since SDL 3.4.16.
+ */
+#define SDL_HINT_ECLIPSE_VULKAN_DRIVER "SDL_ECLIPSE_VULKAN_DRIVER"
+
+/**
+ * A variable controlling whether SDL pins its render thread to a big core.
+ *
+ * Minecraft's render thread does not care how many cores the device has; it
+ * wants the fastest one. SDL calls this from the points where it knows which
+ * thread is rendering, and eclipseexec moves that thread onto the
+ * highest-clocked CPU in the device, once per thread.
+ *
+ * The variable can be set to the following values:
+ *
+ * - "0": SDL leaves the render thread where the scheduler put it.
+ * - "1": SDL pins the render thread to the fastest CPU. (default)
+ *
+ * This hint can be set anytime, but the pinning itself only happens once per
+ * thread, so changing it after rendering has started affects threads that have
+ * not been pinned yet.
+ *
+ * \since This hint is available since SDL 3.4.16.
+ */
+#define SDL_HINT_ECLIPSE_BIGCORE_AFFINITY "SDL_ECLIPSE_BIGCORE_AFFINITY"
+
+/**
  * A variable setting the app ID string.
  *
  * This string is used by desktop compositors to identify and group windows

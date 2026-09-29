@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-extern JNINativeMethod HIDDeviceManager_tab[8];
+extern JNINativeMethod EclipseHIDDeviceManager_tab[8];
 
 #ifdef __cplusplus
 }

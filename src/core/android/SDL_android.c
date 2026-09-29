@@ -46,13 +46,13 @@
 #include <dlfcn.h>
 #include <time.h>
 
-#define SDL_JAVA_PREFIX                               org_libsdl_app
+#define SDL_JAVA_PREFIX                               me_shadow_eclipselauncher_sdl
 #define CONCAT1(prefix, class, function)              CONCAT2(prefix, class, function)
 #define CONCAT2(prefix, class, function)              Java_##prefix##_##class##_##function
-#define SDL_JAVA_INTERFACE(function)                  CONCAT1(SDL_JAVA_PREFIX, SDLActivity, function)
-#define SDL_JAVA_AUDIO_INTERFACE(function)            CONCAT1(SDL_JAVA_PREFIX, SDLAudioManager, function)
-#define SDL_JAVA_CONTROLLER_INTERFACE(function)       CONCAT1(SDL_JAVA_PREFIX, SDLControllerManager, function)
-#define SDL_JAVA_INTERFACE_INPUT_CONNECTION(function) CONCAT1(SDL_JAVA_PREFIX, SDLInputConnection, function)
+#define SDL_JAVA_INTERFACE(function)                  CONCAT1(SDL_JAVA_PREFIX, EclipseSDL, function)
+#define SDL_JAVA_AUDIO_INTERFACE(function)            CONCAT1(SDL_JAVA_PREFIX, EclipseAudioManager, function)
+#define SDL_JAVA_CONTROLLER_INTERFACE(function)       CONCAT1(SDL_JAVA_PREFIX, EclipseControllerManager, function)
+#define SDL_JAVA_INTERFACE_INPUT_CONNECTION(function) CONCAT1(SDL_JAVA_PREFIX, EclipseInputConnection, function)
 
 // Audio encoding definitions
 #define ENCODING_PCM_8BIT  3
@@ -213,7 +213,7 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeFileDialog)(
     JNIEnv *env, jclass jcls,
     jint requestCode, jobjectArray fileList, jint filter);
 
-static JNINativeMethod SDLActivity_tab[] = {
+static JNINativeMethod EclipseSDL_tab[] = {
     { "nativeGetVersion", "()Ljava/lang/String;", SDL_JAVA_INTERFACE(nativeGetVersion) },
     { "nativeSetupJNI", "()V", SDL_JAVA_INTERFACE(nativeSetupJNI) },
     { "nativeInitMainThread", "()V", SDL_JAVA_INTERFACE(nativeInitMainThread) },
@@ -269,7 +269,7 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE_INPUT_CONNECTION(nativeGenerateScancod
     JNIEnv *env, jclass cls,
     jchar chUnicode);
 
-static JNINativeMethod SDLInputConnection_tab[] = {
+static JNINativeMethod EclipseInputConnection_tab[] = {
     { "nativeCommitText", "(Ljava/lang/String;I)V", SDL_JAVA_INTERFACE_INPUT_CONNECTION(nativeCommitText) },
     { "nativeGenerateScancodeForUnichar", "(C)V", SDL_JAVA_INTERFACE_INPUT_CONNECTION(nativeGenerateScancodeForUnichar) }
 };
@@ -286,7 +286,7 @@ JNIEXPORT void JNICALL
     SDL_JAVA_AUDIO_INTERFACE(nativeRemoveAudioDevice)(JNIEnv *env, jclass jcls, jboolean recording,
                                                 jint device_id);
 
-static JNINativeMethod SDLAudioManager_tab[] = {
+static JNINativeMethod EclipseAudioManager_tab[] = {
     { "nativeSetupJNI", "()V", SDL_JAVA_AUDIO_INTERFACE(nativeSetupJNI) },
     { "nativeAddAudioDevice", "(ZLjava/lang/String;I)V", SDL_JAVA_AUDIO_INTERFACE(nativeAddAudioDevice) },
     { "nativeRemoveAudioDevice", "(ZI)V", SDL_JAVA_AUDIO_INTERFACE(nativeRemoveAudioDevice) }
@@ -334,7 +334,7 @@ JNIEXPORT void JNICALL SDL_JAVA_CONTROLLER_INTERFACE(nativeRemoveHaptic)(
     JNIEnv *env, jclass jcls,
     jint device_id);
 
-static JNINativeMethod SDLControllerManager_tab[] = {
+static JNINativeMethod EclipseControllerManager_tab[] = {
     { "nativeSetupJNI", "()V", SDL_JAVA_CONTROLLER_INTERFACE(nativeSetupJNI) },
     { "onNativePadDown", "(III)Z", SDL_JAVA_CONTROLLER_INTERFACE(onNativePadDown) },
     { "onNativePadUp", "(III)Z", SDL_JAVA_CONTROLLER_INTERFACE(onNativePadUp) },
@@ -586,11 +586,11 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
         return JNI_VERSION_1_4;
     }
 
-    register_methods(env, "org/libsdl/app/SDLActivity", SDLActivity_tab, SDL_arraysize(SDLActivity_tab));
-    register_methods(env, "org/libsdl/app/SDLInputConnection", SDLInputConnection_tab, SDL_arraysize(SDLInputConnection_tab));
-    register_methods(env, "org/libsdl/app/SDLAudioManager", SDLAudioManager_tab, SDL_arraysize(SDLAudioManager_tab));
-    register_methods(env, "org/libsdl/app/SDLControllerManager", SDLControllerManager_tab, SDL_arraysize(SDLControllerManager_tab));
-    register_methods(env, "org/libsdl/app/HIDDeviceManager", HIDDeviceManager_tab, SDL_arraysize(HIDDeviceManager_tab));
+    register_methods(env, "me/shadow/eclipselauncher/sdl/EclipseSDL", EclipseSDL_tab, SDL_arraysize(EclipseSDL_tab));
+    register_methods(env, "me/shadow/eclipselauncher/sdl/EclipseInputConnection", EclipseInputConnection_tab, SDL_arraysize(EclipseInputConnection_tab));
+    register_methods(env, "me/shadow/eclipselauncher/sdl/EclipseAudioManager", EclipseAudioManager_tab, SDL_arraysize(EclipseAudioManager_tab));
+    register_methods(env, "me/shadow/eclipselauncher/sdl/EclipseControllerManager", EclipseControllerManager_tab, SDL_arraysize(EclipseControllerManager_tab));
+    register_methods(env, "me/shadow/eclipselauncher/sdl/EclipseHIDDeviceManager", EclipseHIDDeviceManager_tab, SDL_arraysize(EclipseHIDDeviceManager_tab));
 
     return JNI_VERSION_1_4;
 }
@@ -2284,6 +2284,15 @@ static bool PrepareAPK(void)
         JNIEnv *env = Android_JNI_GetEnv();
         if (LocalReferenceHolder_Init(&refs, env)) {
             jobject context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+            if (!context) {
+                // getContext() is null once the host Activity is gone. The root
+                // node we just allocated stays as the empty tree, so a later
+                // call short-circuits instead of re-parsing the APK, and every
+                // path out of this function reports failure the same way.
+                SDL_Log("ANDROID: No Android context; APK contents will be unavailable.");
+                LocalReferenceHolder_Cleanup(&refs);
+                return false;
+            }
             jmethodID mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, context), "getPackageResourcePath", "()Ljava/lang/String;");
             jstring jstr = (jstring)(*env)->CallObjectMethod(env, context, mid);
             jthrowable jexception = (*env)->ExceptionOccurred(env);
@@ -2323,6 +2332,11 @@ static void Internal_Android_Create_AssetManager(void)
 
     // context = SDLActivity.getContext();
     context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+    if (!context) {
+        SDL_SetError("Couldn't get Android context!");
+        LocalReferenceHolder_Cleanup(&refs);
+        return;
+    }
 
     // javaAssetManager = context.getAssets();
     mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, context),
@@ -2534,6 +2548,11 @@ int Android_JNI_GetPowerInfo(int *plugged, int *charged, int *battery, int *seco
 
     // context = SDLActivity.getContext();
     context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+    if (!context) {
+        SDL_SetError("Couldn't get Android context!");
+        LocalReferenceHolder_Cleanup(&refs);
+        return -1;
+    }
 
     action = (*env)->NewStringUTF(env, "android.intent.action.BATTERY_CHANGED");
 
@@ -2544,10 +2563,42 @@ int Android_JNI_GetPowerInfo(int *plugged, int *charged, int *battery, int *seco
 
     (*env)->DeleteLocalRef(env, action);
 
-    mid = (*env)->GetMethodID(env, mActivityClass, "registerReceiver", "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;");
+    /* Resolve registerReceiver against the object it will be called on.
+     *
+     * The caller is the Context that getContext() just handed us, and this
+     * lookup used to be done against mActivityClass instead. That only ever
+     * worked because the class was itself an Activity, so the Context and the
+     * class happened to share the method — an accident of one Java binding.
+     * A binding that is not an Activity would have been handed a method that
+     * the object has no slot for. */
+    cls = (*env)->GetObjectClass(env, context);
+    mid = (*env)->GetMethodID(env, cls, "registerReceiver", "(Landroid/content/BroadcastReceiver;Landroid/content/IntentFilter;)Landroid/content/Intent;");
+    if (!mid) {
+        // GetMethodID raises NoSuchMethodError as well as returning null, and a
+        // pending exception makes every later JNI call in this function abort.
+        (*env)->ExceptionClear(env);
+        SDL_SetError("Context.registerReceiver is unavailable");
+        LocalReferenceHolder_Cleanup(&refs);
+        return -1;
+    }
+
     intent = (*env)->CallObjectMethod(env, context, mid, NULL, filter);
 
+    (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, filter);
+
+    if ((*env)->ExceptionCheck(env) || !intent) {
+        // Android refuses some registrations outright — a system-only action, a
+        // filter it considers malformed, a targetSdk demanding an export flag —
+        // and a query that matches nothing simply returns null. Either way there
+        // is no Intent to read extras from, so report the reading as failed
+        // rather than building one on a pending exception. The callers already
+        // treat -1 as "unavailable", which is what this is.
+        (*env)->ExceptionClear(env);
+        SDL_SetError("Couldn't read Android battery state");
+        LocalReferenceHolder_Cleanup(&refs);
+        return -1;
+    }
 
     cls = (*env)->GetObjectClass(env, intent);
 
@@ -2783,6 +2834,18 @@ bool Android_JNI_ShowMessageBox(const SDL_MessageBoxData *messageboxdata, int *b
 
     // context = SDLActivity.getContext();
     context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+    if (!context) {
+        // Everything allocated above has to go: this is the only path that
+        // returns before the shared cleanup at the tail of the function.
+        SDL_SetError("Couldn't get Android context!");
+        (*env)->DeleteLocalRef(env, title);
+        (*env)->DeleteLocalRef(env, message);
+        (*env)->DeleteLocalRef(env, button_flags);
+        (*env)->DeleteLocalRef(env, button_ids);
+        (*env)->DeleteLocalRef(env, button_texts);
+        (*env)->DeleteLocalRef(env, colors);
+        return false;
+    }
 
     clazz = (*env)->GetObjectClass(env, context);
 
@@ -3030,6 +3093,11 @@ const char *SDL_GetAndroidExternalStoragePath(void)
 
         // context = SDLActivity.getContext();
         context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+        if (!context) {
+            SDL_SetError("Couldn't get Android context!");
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
 
         // fileObj = context.getExternalFilesDir();
         mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, context),
@@ -3076,8 +3144,13 @@ const char *SDL_GetAndroidCachePath(void)
 
         // context = SDLActivity.getContext();
         context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+        if (!context) {
+            SDL_SetError("Couldn't get Android context!");
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
 
-        // fileObj = context.getExternalFilesDir();
+        // fileObj = context.getCacheDir();
         mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, context),
                                   "getCacheDir", "()Ljava/io/File;");
         fileObject = (*env)->CallObjectMethod(env, context, mid);

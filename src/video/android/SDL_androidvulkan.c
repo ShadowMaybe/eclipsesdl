@@ -34,6 +34,7 @@
 #include "SDL_androidwindow.h"
 
 #include "SDL_androidvulkan.h"
+#include "../../core/android/SDL_eclipse.h"
 
 
 bool Android_Vulkan_LoadLibrary(SDL_VideoDevice *_this, const char *path)
@@ -52,9 +53,17 @@ bool Android_Vulkan_LoadLibrary(SDL_VideoDevice *_this, const char *path)
         path = SDL_GetHint(SDL_HINT_VULKAN_LIBRARY);
     }
     if (!path) {
+        /* Nothing was asked for by name, so the launcher's choice stands:
+         * open the driver up front rather than on the first frame, then take
+         * the handle it offers. An explicit path or hint still wins — an app
+         * that says which loader it wants has earned the last word. */
         path = "libvulkan.so";
+        SDL_EclipsePreloadVulkan();
+        _this->vulkan_config.loader_handle = SDL_EclipseLoadVulkanDriver();
     }
-    _this->vulkan_config.loader_handle = SDL_LoadObject(path);
+    if (!_this->vulkan_config.loader_handle) {
+        _this->vulkan_config.loader_handle = SDL_LoadObject(path);
+    }
     if (!_this->vulkan_config.loader_handle) {
         return false;
     }
@@ -136,6 +145,10 @@ bool Android_Vulkan_CreateSurface(SDL_VideoDevice *_this,
             "vkCreateAndroidSurfaceKHR");
     VkAndroidSurfaceCreateInfoKHR createInfo;
     VkResult result;
+
+    /* The first Vulkan call made from the thread that will drive the
+     * swapchain: move it onto a big core before the driver starts work. */
+    SDL_EclipsePinRenderThread();
 
     if (!_this->vulkan_config.loader_handle) {
         return SDL_SetError("Vulkan is not loaded");

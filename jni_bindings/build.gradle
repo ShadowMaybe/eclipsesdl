@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'me.shadow.eclipselauncher.sdl'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 21
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    // The native libraries come from tools/build_native.sh, which runs CMake
+    // directly and stages libSDL3.so (plus the eclipseexec libraries it hands
+    // over to) into src/main/jniLibs. Gradle packages what is there; it does
+    // not build the .so files itself, so the same build works on a machine
+    // that only has an NDK and a JDK, and CI never compiles the C twice.
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    buildTypes {
+        release {
+            // Renaming anything in here breaks the RegisterNatives binding in
+            // JNI_OnLoad or the GetStaticMethodID lookups in nativeSetupJNI,
+            // and it breaks them at runtime on a user's device. The keep rules
+            // live in consumer-rules.pro so they reach the app that includes
+            // this AAR, not just this module.
+            minifyEnabled false
+        }
+    }
+}

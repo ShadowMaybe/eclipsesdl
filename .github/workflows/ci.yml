@@ -1,0 +1,162 @@
+name: CI
+
+# Builds and tests every push. Nothing is uploaded here: this workflow only
+# decides whether the tree is healthy. Published binaries come from
+# release.yml, which puts them on the Releases page rather than in artifacts —
+# artifacts count against storage quota and expire, releases do neither.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Bindings, provenance, Java
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install the platform to compile the bindings against
+        run: |
+          sdkmanager="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$sdkmanager" ] || sdkmanager=$(command -v sdkmanager)
+          yes | "$sdkmanager" --install "platforms;android-36" >/dev/null
+
+      - name: Check the Java and native sides agree
+        run: python3 tools/check_jni_bindings.py
+
+      - name: Check the tree for work that is not ours
+        run: python3 tools/check_provenance.py
+
+      - name: Compile the bindings against the framework alone
+        run: |
+          # No AndroidX, no support library — if the bindings compile against
+          # android.jar and nothing else, the AAR really is dependency-free.
+          javac -source 11 -target 11 -Xlint:-options \
+            -cp "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms/android-36/android.jar" \
+            -d /tmp/jni-classes \
+            jni_bindings/src/main/java/me/shadow/eclipselauncher/sdl/*.java
+          echo "compiled:"
+          find /tmp/jni-classes -name '*.class' | sort
+
+  build:
+    name: Native build, all ABIs, AAR
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 28.2.13676358
+      CMAKE_VERSION: 3.22.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Resolve Android SDK paths
+        run: |
+          # The runner owns this path; read it rather than assume it, then
+          # publish it so later steps and the cache action can use it.
+          echo "ANDROID_SDK=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          echo "NDK_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "CMAKE_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmake/$CMAKE_VERSION" >> "$GITHUB_ENV"
+
+      - name: Cache the Android toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.NDK_DIR }}
+            ${{ env.CMAKE_DIR }}
+          key: android-toolchain-${{ env.NDK_VERSION }}-${{ env.CMAKE_VERSION }}-${{ runner.os }}
+
+      - name: Install the pinned NDK, CMake and platform
+        run: |
+          sdkmanager="$ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$sdkmanager" ] || sdkmanager=$(command -v sdkmanager)
+          yes | "$sdkmanager" --install \
+            "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" "platforms;android-36" >/dev/null
+          # The SDK's own cmake has ninja beside it, and is the same pair
+          # Gradle uses — putting it on PATH first keeps the two in step.
+          echo "$CMAKE_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: gradle-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle', '**/*.gradle.kts') }}
+          restore-keys: gradle-
+
+      - name: Build the native libraries for every ABI
+        run: |
+          export ANDROID_NDK="$NDK_DIR"
+          sh tools/build_native.sh arm64-v8a armeabi-v7a x86 x86_64
+
+      - name: Check exported symbols
+        run: |
+          export NM="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            # SDL's version script is the allow-list — JNI_OnLoad plus SDL_*,
+            # nothing else. A missing JNI_OnLoad would leave every binding in
+            # the AAR unable to start, and it would compile fine.
+            sh tools/check_exports.sh "build/native/$abi/libSDL3.so" \
+              '^(JNI_OnLoad|SDL_.*)$' JNI_OnLoad
+
+            sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipseexec.so" \
+              '^(JNI_OnLoad|JNI_OnUnload|eclipseexec_.*)$' \
+              JNI_OnLoad JNI_OnUnload eclipseexec_prepare_egl \
+              eclipseexec_acq_egl_handle eclipseexec_acq_vulkan_handle
+
+            if [ "$abi" = arm64-v8a ]; then
+              sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipsehook.so" \
+                '^(eclipse_hook_arm|android_dlopen_ext|android_load_sphal_library|atrace_get_enabled_tags)$' \
+                eclipse_hook_arm android_dlopen_ext android_load_sphal_library atrace_get_enabled_tags
+            fi
+          done
+
+      - name: Build the AAR
+        run: ./gradlew --no-daemon --stacktrace :jni_bindings:assembleRelease
+
+      - name: Confirm the AAR carries the libraries and the keep rules
+        run: |
+          aar=jni_bindings/build/outputs/aar/jni_bindings-release.aar
+          unzip -l "$aar" | tee /tmp/aar-contents.txt
+
+          # Every ABI ships both libraries; the hook is arm64-v8a only.
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            for so in libSDL3.so libeclipseexec.so; do
+              grep -q "jni/$abi/$so" /tmp/aar-contents.txt \
+                || { echo "missing from AAR: jni/$abi/$so" >&2; exit 1; }
+            done
+          done
+          grep -q "jni/arm64-v8a/libeclipsehook.so" /tmp/aar-contents.txt \
+            || { echo "missing from AAR: jni/arm64-v8a/libeclipsehook.so" >&2; exit 1; }
+
+          # consumer-rules.pro is packaged as proguard.txt. Dropping it looks
+          # harmless and then R8 renames every JNI method on the first release
+          # build of whatever app includes this.
+          grep -q "proguard.txt" /tmp/aar-contents.txt \
+            || { echo "missing from AAR: proguard.txt (consumer keep rules)" >&2; exit 1; }
+
+          # The classes are inside classes.jar, so look there.
+          unzip -p "$aar" classes.jar > /tmp/classes.jar
+          unzip -l /tmp/classes.jar > /tmp/classes.txt
+          for cls in EclipseSDL EclipseSurfaceView EclipseInputConnection \
+                     EclipseAudioManager EclipseControllerManager EclipseHIDDeviceManager; do
+            grep -q "me/shadow/eclipselauncher/sdl/$cls.class" /tmp/classes.txt \
+              || { echo "missing from classes.jar: $cls" >&2; exit 1; }
+          done
+
+          echo "AAR contents look right"

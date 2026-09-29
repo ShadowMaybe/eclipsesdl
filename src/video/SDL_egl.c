@@ -28,6 +28,7 @@
 #ifdef SDL_VIDEO_DRIVER_ANDROID
 #include <android/native_window.h>
 #include "../video/android/SDL_androidvideo.h"
+#include "../core/android/SDL_eclipse.h"
 #endif
 #ifdef SDL_VIDEO_DRIVER_RPI
 #include <unistd.h>
@@ -284,9 +285,19 @@ SDL_FunctionPointer SDL_EGL_GetProcAddressInternal(SDL_VideoDevice *_this, const
     if (_this->egl_data) {
         const Uint32 eglver = (((Uint32)_this->egl_data->egl_version_major) << 16) | ((Uint32)_this->egl_data->egl_version_minor);
         const bool is_egl_15_or_later = eglver >= ((((Uint32)1) << 16) | 5);
+#if defined(SDL_VIDEO_DRIVER_ANDROID)
+        /* Android's libEGL answers from the driver that is actually loaded —
+         * including one the launcher opened in a private linker namespace,
+         * where SDL's own dlsym would be reading the wrong object — so it is
+         * the right thing to ask first at every EGL version. SDL_LoadFunction
+         * stays behind it as the fallback it has always been. */
+        const bool egl_getproc_is_authoritative = true;
+#else
+        const bool egl_getproc_is_authoritative = false;
+#endif
 
         // EGL 1.5 can use eglGetProcAddress() for any symbol. 1.4 and earlier can't use it for core entry points.
-        if (!result && is_egl_15_or_later && _this->egl_data->eglGetProcAddress) {
+        if (!result && (is_egl_15_or_later || egl_getproc_is_authoritative) && _this->egl_data->eglGetProcAddress) {
             result = _this->egl_data->eglGetProcAddress(proc);
         }
 
@@ -378,6 +389,16 @@ static bool SDL_EGL_LoadLibraryInternal(SDL_VideoDevice *_this, const char *egl_
     if (path) {
         opengl_dll_handle = SDL_LoadObject(path);
     }
+
+#ifdef SDL_VIDEO_DRIVER_ANDROID
+    /* The launcher may already have the driver open — possibly from a private
+     * linker namespace, where SDL's own dlopen would not find it. An explicit
+     * SDL_OPENGL_LIBRARY still wins; this is the answer to "nothing was asked
+     * for, use what the launcher chose". */
+    if (!opengl_dll_handle) {
+        opengl_dll_handle = SDL_EclipseLoadGLDriver();
+    }
+#endif
 
     if (!opengl_dll_handle) {
         if (_this->gl_config.profile_mask == SDL_GL_CONTEXT_PROFILE_ES) {
@@ -766,6 +787,16 @@ static bool SDL_EGL_PrivateChooseConfig(SDL_VideoDevice *_this, bool set_config_
     int i, j, best_bitdiff = -1, best_truecolor_bitdiff = -1;
     int truecolor_config_idx = -1;
 
+#ifdef SDL_VIDEO_DRIVER_ANDROID
+    /* Fold in what the launcher asked the driver for before any of it is read:
+     * which of GL and GLES is in play, and the GLES version to request. It goes
+     * into gl_config rather than into the attribute list, because
+     * SDL_EGL_CreateContext reads the same fields later and both have to agree. */
+    SDL_EclipseApplyRenderSpec(&_this->gl_config.profile_mask,
+                                &_this->gl_config.major_version,
+                                &_this->gl_config.minor_version);
+#endif
+
     // Get a valid EGL configuration
     i = 0;
     attribs[i++] = EGL_RED_SIZE;
@@ -978,6 +1009,16 @@ SDL_GLContext SDL_EGL_CreateContext(SDL_VideoDevice *_this, EGLSurface egl_surfa
     // max 16 key+value pairs plus terminator.
     EGLint attribs[33];
     int attr = 0;
+
+#ifdef SDL_VIDEO_DRIVER_ANDROID
+    /* The same override SDL_EGL_PrivateChooseConfig applies, applied again
+     * here: this is the last moment the attributes are still SDL's own, and a
+     * context whose profile does not match the config it was chosen with is a
+     * failure that only shows up on the device. */
+    SDL_EclipseApplyRenderSpec(&_this->gl_config.profile_mask,
+                                &_this->gl_config.major_version,
+                                &_this->gl_config.minor_version);
+#endif
 
     EGLContext egl_context, share_context = EGL_NO_CONTEXT;
     EGLint profile_mask = _this->gl_config.profile_mask;

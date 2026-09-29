@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A library manifest, not an application: eclipsesdl declares no components,
+  no permissions and no <uses-feature>. It talks to SDL, not to Android's
+  application model, and the host launcher decides all of that for itself.
+
+  minSdk lives in build.gradle; AGP merges this file over it.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

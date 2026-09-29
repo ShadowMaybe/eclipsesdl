@@ -43,10 +43,10 @@
 #define LOGD(...)
 #endif
 
-#define SDL_JAVA_PREFIX                                 org_libsdl_app
+#define SDL_JAVA_PREFIX                                 me_shadow_eclipselauncher_sdl
 #define CONCAT1(prefix, class, function)                CONCAT2(prefix, class, function)
 #define CONCAT2(prefix, class, function)                Java_ ## prefix ## _ ## class ## _ ## function
-#define HID_DEVICE_MANAGER_JAVA_INTERFACE(function)     CONCAT1(SDL_JAVA_PREFIX, HIDDeviceManager, function)
+#define HID_DEVICE_MANAGER_JAVA_INTERFACE(function)     CONCAT1(SDL_JAVA_PREFIX, EclipseHIDDeviceManager, function)
 
 
 #ifndef SDL_HIDAPI_DISABLED
@@ -1487,7 +1487,7 @@ JNIEXPORT void JNICALL HID_DEVICE_MANAGER_JAVA_INTERFACE(HIDDeviceReportResponse
 #endif /* SDL_HIDAPI_DISABLED */
 
 extern "C"
-JNINativeMethod HIDDeviceManager_tab[8] = {
+JNINativeMethod EclipseHIDDeviceManager_tab[8] = {
         { "HIDDeviceRegisterCallback", "()V", (void*)HID_DEVICE_MANAGER_JAVA_INTERFACE(HIDDeviceRegisterCallback) },
         { "HIDDeviceReleaseCallback", "()V", (void*)HID_DEVICE_MANAGER_JAVA_INTERFACE(HIDDeviceReleaseCallback) },
         { "HIDDeviceConnected", "(ILjava/lang/String;IILjava/lang/String;ILjava/lang/String;Ljava/lang/String;IIIIZI)V", (void*)HID_DEVICE_MANAGER_JAVA_INTERFACE(HIDDeviceConnected) },

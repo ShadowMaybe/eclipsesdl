@@ -30,6 +30,7 @@
 #include "SDL_androidvideo.h"
 #include "SDL_androidevents.h"
 #include "SDL_androidgl.h"
+#include "../../core/android/SDL_eclipse.h"
 #include "../../core/android/SDL_android.h"
 
 #include <android/log.h>
@@ -38,6 +39,12 @@
 
 bool Android_GLES_MakeCurrent(SDL_VideoDevice *_this, SDL_Window *window, SDL_GLContext context)
 {
+    /* This is the first call SDL makes on the thread that is about to render,
+     * every session: the right moment to move it onto a big core. eclipseexec
+     * pins once per thread and remembers, so the cost here is a thread-local
+     * read after the first time. */
+    SDL_EclipsePinRenderThread();
+
     if (window && context) {
         return SDL_EGL_MakeCurrent(_this, window->internal->egl_surface, context);
     } else {

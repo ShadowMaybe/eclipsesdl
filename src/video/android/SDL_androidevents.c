@@ -76,7 +76,7 @@ static void android_egl_context_backup(SDL_Window *window)
 #endif
 
 /*
- * Android_ResumeSem and Android_PauseSem are signaled from Java_org_libsdl_app_SDLActivity_nativePause and Java_org_libsdl_app_SDLActivity_nativeResume
+ * Android_ResumeSem and Android_PauseSem are signaled from Java_me_shadow_eclipselauncher_sdl_EclipseSDL_nativePause and Java_me_shadow_eclipselauncher_sdl_EclipseSDL_nativeResume
  */
 static bool Android_EventsInitialized;
 static bool Android_BlockOnPause = true;

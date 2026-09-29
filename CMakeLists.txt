@@ -291,7 +291,12 @@ set_option(SDL_UNINSTALL           "Enable uninstallation of SDL3" ${SDL3_MAINPR
 cmake_dependent_option(SDL_PRESEED "Preseed CMake cache to speed up configuration" ON "${SDL_PRESEED_AVAILABLE}" OFF)
 cmake_dependent_option(SDL_RELOCATABLE "Create relocatable SDL package" ${SDL_RELOCATABLE_DEFAULT} "SDL_INSTALL" OFF)
 
-cmake_dependent_option(SDL_ANDROID_JAR  "Enable creation of SDL3.jar" ${SDL3_MAINPROJECT} "ANDROID" ON)
+# eclipsesdl: the Java bindings live in jni_bindings/ and are built by Gradle
+# into an AAR, so compiling upstream's org.libsdl.app classes from
+# android-project/ here would ship a second, conflicting copy of the same JNI
+# surface. That tree is kept only because upstream's docs and scripts refer to
+# it; nothing in this build is allowed to package it.
+cmake_dependent_option(SDL_ANDROID_JAR  "Enable creation of SDL3.jar" OFF "ANDROID" OFF)
 
 option_string(SDL_ASSERTIONS "Enable internal sanity checks (auto/disabled/release/enabled/paranoid)" "auto")
 set_option(SDL_ASSEMBLY            "Enable assembly routines" ${SDL_ASSEMBLY_DEFAULT})
@@ -4062,6 +4067,32 @@ if(SDL_STATIC)
   if(NOT CMAKE_VERSION VERSION_LESS "3.16")
     target_precompile_headers(SDL3-static PRIVATE "$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${PROJECT_SOURCE_DIR}/src/SDL_internal.h>")
   endif()
+endif()
+
+##### eclipseexec #####
+#
+# The Eclipse Launcher's native bootstrap layer. Optional, and off unless a
+# checkout is pointed at: SDL without it is still SDL, it just loads its own GL
+# and Vulkan drivers. With it, SDL asks eclipseexec for the driver the launcher
+# has already opened — possibly from a private linker namespace, where Android
+# would not have looked — takes the render parameters the launcher published,
+# and pins its render thread to a big core.
+#
+# libSDL3.so does not link against it. src/core/android/SDL_eclipse.c finds the
+# library at runtime and stands aside when it is absent, so carrying one or the
+# other is a packaging choice, never a load-time dependency.
+set(ECLIPSE_EXEC_ROOT "" CACHE PATH "Path to an eclipseexec checkout; leave empty to build SDL without the Eclipse driver handover")
+if(ECLIPSE_EXEC_ROOT)
+  if(NOT EXISTS "${ECLIPSE_EXEC_ROOT}/include/eclipseexec.h")
+    message(FATAL_ERROR "ECLIPSE_EXEC_ROOT is set to '${ECLIPSE_EXEC_ROOT}', which has no include/eclipseexec.h. Point it at a checkout of ShadowMaybe/eclipseexec.")
+  endif()
+  foreach(_sdl_eclipse_target SDL3-shared SDL3-static)
+    if(TARGET ${_sdl_eclipse_target})
+      target_include_directories(${_sdl_eclipse_target} PRIVATE "${ECLIPSE_EXEC_ROOT}/include")
+      target_compile_definitions(${_sdl_eclipse_target} PRIVATE SDL_ECLIPSE_EXEC)
+    endif()
+  endforeach()
+  message(STATUS "SDL: Eclipse driver handover enabled (eclipseexec at ${ECLIPSE_EXEC_ROOT})")
 endif()
 
 sdl_compile_definitions(
