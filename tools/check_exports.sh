@@ -32,7 +32,15 @@ if [ ! -f "$file" ]; then
     exit 1
 fi
 
-symbols=$("$NM" -D --defined-only "$file" 2>/dev/null | awk '{print $NF}' | sort -u)
+symbols=$("$NM" -D --defined-only "$file" 2>/dev/null | awk '{
+    n = $NF
+    # The SDL version script names a version (SDL3_0.0.0), so nm prints
+    # JNI_OnLoad@@SDL3_0.0.0; the eclipseexec script has no version name at
+    # all. Strip the suffix so both compare as plain symbol names — an ELF
+    # symbol can never contain "@", so the first one ends the name.
+    sub(/@.*$/, "", n)
+    print n
+}' | sort -u)
 
 status=0
 
