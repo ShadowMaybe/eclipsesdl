@@ -35,6 +35,12 @@ jobs:
       - name: Check the Java and native sides agree
         run: python3 tools/check_jni_bindings.py
 
+      - name: Check the published contract still matches the checker
+        # The document claims to be what the checker fails the build over, so
+        # it has to be regenerated and compared rather than trusted: a table
+        # edited by hand would pass the check above and mislead a consumer.
+        run: python3 tools/check_jni_bindings.py --emit-contract - | diff -u docs/jni-contract.md -
+
       - name: Check the tree for work that is not ours
         run: python3 tools/check_provenance.py
 
@@ -106,19 +112,26 @@ jobs:
 
       - name: Check exported symbols
         run: |
+          # The staged copies rather than the build tree: these are what the
+          # AAR and the release zips actually contain, so this step doubles as
+          # proof that stripping them kept what dynamic linking needs —
+          # --strip-unneeded touches .symtab and the debug sections, never
+          # .dynsym. A mistake there would compile, ship, and then surface as
+          # an UnsatisfiedLinkError on somebody's phone.
           export NM="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          stage=jni_bindings/src/main/jniLibs
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
             # SDL's version script is the allow-list — JNI_OnLoad plus SDL_*,
             # nothing else. A missing JNI_OnLoad would leave every binding in
             # the AAR unable to start, and it would compile fine.
-            sh tools/check_exports.sh "build/native/$abi/libSDL3.so" \
+            sh tools/check_exports.sh "$stage/$abi/libSDL3.so" \
               '^(JNI_OnLoad|SDL_.*)$' JNI_OnLoad
 
             # Exactly the symbols SDL_eclipse.c resolves. Asking for more
             # would break on an upstream rename we never see; asking for fewer
             # would let the handover quietly turn itself off at run time
             # instead of failing here.
-            sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipseexec.so" \
+            sh tools/check_exports.sh "$stage/$abi/libeclipseexec.so" \
               '^(JNI_OnLoad|JNI_OnUnload|eclipseexec_.*)$' \
               JNI_OnLoad JNI_OnUnload \
               eclipseexec_acq_egl_handle eclipseexec_acq_vulkan_handle \
@@ -126,7 +139,7 @@ jobs:
               eclipseexec_last_error eclipseexec_renderspec
 
             if [ "$abi" = arm64-v8a ]; then
-              sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipsehook.so" \
+              sh tools/check_exports.sh "$stage/$abi/libeclipsehook.so" \
                 '^(eclipse_hook_arm|android_dlopen_ext|android_load_sphal_library|atrace_get_enabled_tags)$' \
                 eclipse_hook_arm android_dlopen_ext android_load_sphal_library atrace_get_enabled_tags
             fi

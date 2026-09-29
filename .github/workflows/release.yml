@@ -65,6 +65,9 @@ jobs:
       - name: Check the Java and native sides agree
         run: python3 tools/check_jni_bindings.py
 
+      - name: Check the published contract still matches the checker
+        run: python3 tools/check_jni_bindings.py --emit-contract - | diff -u docs/jni-contract.md -
+
       - name: Check the tree for work that is not ours
         run: python3 tools/check_provenance.py
 
@@ -82,19 +85,22 @@ jobs:
 
       - name: Check exported symbols
         run: |
+          # Staged copies rather than the build tree — see ci.yml for why:
+          # these are the bytes that ship, so the check also covers stripping.
           export NM="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          stage=jni_bindings/src/main/jniLibs
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            sh tools/check_exports.sh "build/native/$abi/libSDL3.so" \
+            sh tools/check_exports.sh "$stage/$abi/libSDL3.so" \
               '^(JNI_OnLoad|SDL_.*)$' JNI_OnLoad
             # Exactly the symbols SDL_eclipse.c resolves; see ci.yml.
-            sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipseexec.so" \
+            sh tools/check_exports.sh "$stage/$abi/libeclipseexec.so" \
               '^(JNI_OnLoad|JNI_OnUnload|eclipseexec_.*)$' \
               JNI_OnLoad JNI_OnUnload \
               eclipseexec_acq_egl_handle eclipseexec_acq_vulkan_handle \
               eclipseexec_preload_vulkan eclipseexec_make_bigcore_affine \
               eclipseexec_last_error eclipseexec_renderspec
             if [ "$abi" = arm64-v8a ]; then
-              sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipsehook.so" \
+              sh tools/check_exports.sh "$stage/$abi/libeclipsehook.so" \
                 '^(eclipse_hook_arm|android_dlopen_ext|android_load_sphal_library|atrace_get_enabled_tags)$' \
                 eclipse_hook_arm android_dlopen_ext android_load_sphal_library atrace_get_enabled_tags
             fi

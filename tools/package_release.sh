@@ -8,23 +8,27 @@
 # uploads dist/* — the Releases page is the artifact store, since Actions
 # artifacts expire and count against quota.
 #
+# The binaries are taken from $STAGE — the directory build_native.sh strips
+# and Gradle packages — so the zip and the AAR for one tag are the same bytes,
+# not two opinions about what the tag contains.
+#
 # Usage: TAG=v0.1.0 sh tools/package_release.sh
 set -eu
 
 TAG=${TAG:?set TAG to the release tag, e.g. TAG=v0.1.0}
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 OUT="$ROOT/dist"
-BUILT="$ROOT/build/native"
+STAGE=${STAGE:-jni_bindings/src/main/jniLibs}
+case $STAGE in /*) ;; *) STAGE=$ROOT/$STAGE ;; esac
 AAR="$ROOT/jni_bindings/build/outputs/aar/jni_bindings-release.aar"
-NDK_VERSION=${NDK_VERSION:-28.2.13676358}
 
 command -v zip >/dev/null 2>&1 || {
     echo "package_release: 'zip' is not installed (apt install zip / apk add zip)" >&2
     exit 2
 }
 
-if [ ! -d "$BUILT" ]; then
-    echo "package_release: $BUILT is missing — run tools/build_native.sh first" >&2
+if [ ! -d "$STAGE" ]; then
+    echo "package_release: $STAGE is missing — run tools/build_native.sh first" >&2
     exit 1
 fi
 if [ ! -f "$AAR" ]; then
@@ -32,61 +36,17 @@ if [ ! -f "$AAR" ]; then
     exit 1
 fi
 
-# The NDK's toolchain file injects -g into every build type, so a Release build
-# still carries its debug sections — while AGP strips the same libraries inside
-# the AAR. Without this, the zip and the AAR for one tag disagree about how big
-# the code is. STRIP overrides; otherwise the NDK's own llvm-strip, then PATH.
-find_strip() {
-    if [ -n "${STRIP:-}" ]; then
-        printf '%s\n' "$STRIP"
-        return 0
-    fi
-    for root in "${ANDROID_NDK:-}" "${ANDROID_NDK_HOME:-}" "${NDK_DIR:-}" \
-                "${ANDROID_HOME:-}/ndk/$NDK_VERSION" "${ANDROID_SDK:-}/ndk/$NDK_VERSION"; do
-        [ -d "$root" ] || continue
-        for host in linux-x86_64 darwin-x86_64 darwin-arm64; do
-            if [ -x "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip" ]; then
-                printf '%s\n' "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip"
-                return 0
-            fi
-        done
-    done
-    command -v llvm-strip || command -v strip || return 1
-}
-
-STRIP_TOOL=$(find_strip || true)
-if [ -z "$STRIP_TOOL" ]; then
-    echo "package_release: no strip tool found; the zips will carry debug info" >&2
-fi
-
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
 for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-    sdl_so="$BUILT/$abi/libSDL3.so"
-    exec_so="$BUILT/eclipseexec/$abi/libeclipseexec.so"
-    hook_so="$BUILT/eclipseexec/$abi/libeclipsehook.so"
-
-    if [ ! -f "$sdl_so" ] || [ ! -f "$exec_so" ]; then
-        echo "package_release: $abi is not fully built (need libSDL3.so and libeclipseexec.so)" >&2
+    if [ ! -f "$STAGE/$abi/libSDL3.so" ] || [ ! -f "$STAGE/$abi/libeclipseexec.so" ]; then
+        echo "package_release: $abi is not staged (need libSDL3.so and libeclipseexec.so)" >&2
         exit 1
     fi
-
-    stage=$(mktemp -d)
-    cp "$sdl_so" "$exec_so" "$stage/"
-    # arm64-v8a only; the other ABIs ship without it and the launcher copes.
-    if [ -f "$hook_so" ]; then
-        cp "$hook_so" "$stage/"
-    fi
-    if [ -n "$STRIP_TOOL" ]; then
-        # --strip-unneeded drops the debug sections and the local symbol table
-        # and keeps .dynsym, which is the part dynamic linking still needs.
-        for so in "$stage"/*.so; do
-            "$STRIP_TOOL" --strip-unneeded "$so"
-        done
-    fi
-    (cd "$stage" && zip -q "$OUT/eclipsesdl-$TAG-$abi.zip" ./*)
-    rm -rf "$stage"
+    # arm64-v8a also carries libeclipsehook.so; the other ABIs ship without it
+    # and the launcher copes, so the zip simply holds whatever was staged.
+    (cd "$STAGE/$abi" && zip -q "$OUT/eclipsesdl-$TAG-$abi.zip" ./*)
 done
 
 # The headers travel separately from the binaries: a consumer who wants to

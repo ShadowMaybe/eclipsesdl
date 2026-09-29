@@ -56,6 +56,30 @@ case $OUT in /*) ;; *) OUT=$ROOT/$OUT ;; esac
 STAGE=${STAGE:-jni_bindings/src/main/jniLibs}
 case $STAGE in /*) ;; *) STAGE=$ROOT/$STAGE ;; esac
 
+# The NDK toolchain file adds -g to every build type, so a "Release" tree still
+# carries full debug info — and AGP does not strip what it puts in an AAR, only
+# the APK a consumer builds later. Staged copies are therefore stripped here,
+# once, at the moment they become a shipped artefact: the debug info stays
+# where it is useful, in $OUT, and the AAR, the release zips and the export
+# check all read the same stripped files.
+# STRIP overrides; otherwise the NDK's own llvm-strip, then anything on PATH.
+find_strip() {
+    if [ -n "${STRIP:-}" ]; then
+        printf '%s\n' "$STRIP"
+        return 0
+    fi
+    for root in "$ANDROID_NDK"; do
+        for host in linux-x86_64 darwin-x86_64 darwin-arm64; do
+            if [ -x "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip" ]; then
+                printf '%s\n' "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip"
+                return 0
+            fi
+        done
+    done
+    command -v llvm-strip || command -v strip || return 1
+}
+STRIP_TOOL=$(find_strip || true)
+
 if [ "$#" -eq 0 ]; then
     set -- arm64-v8a armeabi-v7a x86 x86_64
 fi
@@ -74,6 +98,7 @@ echo "ABIs:        $*"
 echo "eclipseexec: $ECLIPSE_EXEC ($ECLIPSE_EXEC_TAG)"
 echo "output:      $OUT"
 echo "stage:       $STAGE"
+echo "strip:       ${STRIP_TOOL:-none (staged libraries keep their debug info)}"
 echo
 
 # Start the staging directory from nothing: an ABI built last week and not
@@ -125,6 +150,14 @@ for abi in "$@"; do
     # launcher is expected to cope with its absence on the other ABIs.
     if [ -f "$OUT/eclipseexec/$abi/libeclipsehook.so" ]; then
         cp "$OUT/eclipseexec/$abi/libeclipsehook.so" "$STAGE/$abi/"
+    fi
+
+    if [ -z "$STRIP_TOOL" ]; then
+        echo "tools/build_native.sh: no strip tool found; staged libraries for $abi keep their debug info" >&2
+    else
+        for so in "$STAGE/$abi"/*.so; do
+            "$STRIP_TOOL" --strip-unneeded "$so"
+        done
     fi
     echo
 done
