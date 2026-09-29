@@ -72,13 +72,13 @@ jobs:
           echo "NDK_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "CMAKE_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmake/$CMAKE_VERSION" >> "$GITHUB_ENV"
 
-      - name: Cache the Android toolchain
-        uses: actions/cache@v6
-        with:
-          path: |
-            ${{ env.NDK_DIR }}
-            ${{ env.CMAKE_DIR }}
-          key: android-toolchain-${{ env.NDK_VERSION }}-${{ env.CMAKE_VERSION }}-${{ runner.os }}
+      # Deliberately no cache for the toolchain. The runner image already
+      # carries this NDK, CMake and platform, and sdkmanager confirms that in
+      # about six seconds. Caching them would archive a directory outside the
+      # workspace, which restores through ../../../../.. and cannot have its
+      # modes or timestamps set as the user the job runs as — so the entry cost
+      # 670 MB of quota, downloaded for nothing, and annotated every run with a
+      # failed restore.
 
       - name: Install the pinned NDK, CMake and platform
         run: |

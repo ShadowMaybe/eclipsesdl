@@ -38,13 +38,10 @@ jobs:
           echo "NDK_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "CMAKE_DIR=${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmake/$CMAKE_VERSION" >> "$GITHUB_ENV"
 
-      - name: Cache the Android toolchain
-        uses: actions/cache@v6
-        with:
-          path: |
-            ${{ env.NDK_DIR }}
-            ${{ env.CMAKE_DIR }}
-          key: android-toolchain-${{ env.NDK_VERSION }}-${{ env.CMAKE_VERSION }}-${{ runner.os }}
+      # Deliberately no cache for the toolchain — see ci.yml. The runner image
+      # already carries this NDK, CMake and platform; caching them only archived
+      # a directory outside the workspace, which restores through ../../../../..
+      # with modes and timestamps the job user cannot set.
 
       - name: Cache Gradle
         uses: actions/cache@v6
