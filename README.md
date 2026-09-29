@@ -154,7 +154,10 @@ projects per ABI, and stages the results into
 `jni_bindings/src/main/jniLibs/<abi>/` where Gradle picks them up. It resets
 that directory first, so an ABI you did not build cannot ride along, and it
 strips the staged copies — the debug sections stay in the build tree, and
-what ships in the AAR and in the release zips is the same bytes.
+what ships in the AAR and in the release zips is the same bytes. Stripping
+is not a shrug: if no tool can be found the script stops, because nothing
+downstream can tell an unstripped AAR from a stripped one. `STRIP` picks the
+tool, and `STRIP=none` is the deliberate way to keep the debug info.
 
 Checks, all of which run in CI:
 
@@ -164,7 +167,8 @@ Checks, all of which run in CI:
 | `… --emit-contract - \| diff - docs/jni-contract.md` | Does the published contract still describe what the checker enforces? |
 | `python3 tools/check_provenance.py` | Is there anything in this tree — source, strings, or a built `.so` — that is not Eclipse's? |
 | `sh tools/check_exports.sh <so> <allow-regex> <syms>` | Does the shipped library export exactly what SDL's version script says, including `JNI_OnLoad`? |
-| `javac -source 11 -cp android.jar …` | Do the bindings compile against the framework alone? |
+| `shellcheck -S style tools/*.sh gradlew` | Do the build scripts lint clean? |
+| `javac --release 11 -Xlint:all -cp android.jar …` | Do the bindings compile against the framework alone? |
 
 ---
 

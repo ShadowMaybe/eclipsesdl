@@ -16,7 +16,11 @@ permissions:
 jobs:
   checks:
     name: Bindings, provenance, Java
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the runner image is part of this project's
+    # toolchain (it supplies the JDK and the Android SDK the checks compile
+    # against), so the image version moves when we decide it should, not when
+    # GitHub decides. Bump deliberately, alongside the platform pin below.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -44,11 +48,21 @@ jobs:
       - name: Check the tree for work that is not ours
         run: python3 tools/check_provenance.py
 
+      - name: Lint the build scripts
+        run: |
+          # Nothing else parses these, so a wrong path or a loop that only
+          # misbehaves on a runner would otherwise reach a release intact.
+          shellcheck -S style tools/*.sh gradlew
+
       - name: Compile the bindings against the framework alone
         run: |
           # No AndroidX, no support library — if the bindings compile against
           # android.jar and nothing else, the AAR really is dependency-free.
-          javac -source 11 -target 11 -Xlint:-options \
+          # --release 11 rather than -source/-target: it also selects the
+          # right boot class path, so the "system modules path not set" warning
+          # never happens and nothing has to suppress it with -Xlint:-options.
+          # That leaves -Xlint:all running at full strength instead.
+          javac --release 11 -Xlint:all \
             -cp "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms/android-36/android.jar" \
             -d /tmp/jni-classes \
             jni_bindings/src/main/java/me/shadow/eclipselauncher/sdl/*.java
@@ -57,7 +71,8 @@ jobs:
 
   build:
     name: Native build, all ABIs, AAR
-    runs-on: ubuntu-latest
+    # Pinned for the same reason as the checks job above.
+    runs-on: ubuntu-24.04
     env:
       NDK_VERSION: 28.2.13676358
       CMAKE_VERSION: 3.22.1

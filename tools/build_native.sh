@@ -26,6 +26,8 @@
 #   CMAKE           cmake executable.  Default: cmake from PATH.
 #   OUT             build tree.       Default: build/native
 #   STAGE           jniLibs directory. Default: jni_bindings/src/main/jniLibs
+#   STRIP           strip executable.  Default: the NDK's llvm-strip, then PATH.
+#                   'none' keeps the debug info; anything else missing is an error.
 #
 # Usage: tools/build_native.sh [abi ...]
 set -eu
@@ -62,23 +64,37 @@ case $STAGE in /*) ;; *) STAGE=$ROOT/$STAGE ;; esac
 # once, at the moment they become a shipped artefact: the debug info stays
 # where it is useful, in $OUT, and the AAR, the release zips and the export
 # check all read the same stripped files.
-# STRIP overrides; otherwise the NDK's own llvm-strip, then anything on PATH.
+# The tool find_strip settles on: the NDK's own llvm-strip, then anything on
+# PATH. $ANDROID_NDK is known to be set and real by the time this runs — the
+# script exits earlier if it is not. STRIP is applied by the block below,
+# not inside this function.
 find_strip() {
-    if [ -n "${STRIP:-}" ]; then
-        printf '%s\n' "$STRIP"
-        return 0
-    fi
-    for root in "$ANDROID_NDK"; do
-        for host in linux-x86_64 darwin-x86_64 darwin-arm64; do
-            if [ -x "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip" ]; then
-                printf '%s\n' "$root/toolchains/llvm/prebuilt/$host/bin/llvm-strip"
-                return 0
-            fi
-        done
+    for host in linux-x86_64 darwin-x86_64 darwin-arm64; do
+        if [ -x "$ANDROID_NDK/toolchains/llvm/prebuilt/$host/bin/llvm-strip" ]; then
+            printf '%s\n' "$ANDROID_NDK/toolchains/llvm/prebuilt/$host/bin/llvm-strip"
+            return 0
+        fi
     done
     command -v llvm-strip || command -v strip || return 1
 }
-STRIP_TOOL=$(find_strip || true)
+
+# A tool that is simply missing is an error, not a shrug. Nothing downstream
+# can tell the 4 MB AAR that ships from the 15 MB one that would ship
+# unstripped: both build, both package, both pass the export check, and the
+# only trace is a line in a log nobody reads. STRIP=none is the deliberate
+# way to keep debug info, for the debugging session that wants it.
+if [ "${STRIP:-}" = "none" ]; then
+    STRIP_TOOL=
+elif [ -n "${STRIP:-}" ]; then
+    STRIP_TOOL=$STRIP
+else
+    STRIP_TOOL=$(find_strip || true)
+    if [ -z "$STRIP_TOOL" ]; then
+        echo "tools/build_native.sh: no strip tool found." >&2
+        echo "  (set STRIP=none to keep the debug info deliberately)" >&2
+        exit 3
+    fi
+fi
 
 if [ "$#" -eq 0 ]; then
     set -- arm64-v8a armeabi-v7a x86 x86_64
@@ -153,7 +169,7 @@ for abi in "$@"; do
     fi
 
     if [ -z "$STRIP_TOOL" ]; then
-        echo "tools/build_native.sh: no strip tool found; staged libraries for $abi keep their debug info" >&2
+        echo "build_native.sh: STRIP=none; staged libraries for $abi keep their debug info" >&2
     else
         for so in "$STAGE/$abi"/*.so; do
             "$STRIP_TOOL" --strip-unneeded "$so"

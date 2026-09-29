@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'me.shadow.eclipselauncher.sdl'
-    compileSdk 36
+    namespace = 'me.shadow.eclipselauncher.sdl'
+    compileSdk = 36
 
     defaultConfig {
-        minSdk 21
+        minSdk = 21
         consumerProguardFiles 'consumer-rules.pro'
     }
 
@@ -19,6 +19,21 @@ android {
     sourceSets {
         main {
             jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // tools/build_native.sh strips each library the moment it is
+            // staged, so there is nothing left for AGP to remove and nothing
+            // it should be asked to run. Without this the strip task goes
+            // looking for an NDK of its own choosing — not the pinned one the
+            // natives were built with — and warns, or fails, depending on
+            // which one happens to be installed. One stripper, one set of
+            // bytes: the AAR, the release zips and the export check all read
+            // the same files. Consumers still strip for their own APK; this is
+            // not published with the AAR.
+            keepDebugSymbols += ['**/*.so']
         }
     }
 

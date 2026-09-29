@@ -19,7 +19,12 @@ permissions:
 jobs:
   release:
     name: Build every ABI and publish
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the runner image is part of this project's
+    # toolchain (it supplies the JDK, the Android SDK and the cmake we invoke),
+    # and a release build should not change underneath us because a label
+    # started pointing somewhere new. Bump deliberately, alongside the NDK/CMake
+    # pins below.
+    runs-on: ubuntu-24.04
     env:
       NDK_VERSION: 28.2.13676358
       CMAKE_VERSION: 3.22.1
@@ -60,8 +65,8 @@ jobs:
             "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" "platforms;android-36" >/dev/null
           echo "$CMAKE_DIR/bin" >> "$GITHUB_PATH"
 
-      # Nothing gets published that has not first passed the same two checks
-      # CI runs — a tag should never be a way around them.
+      # Nothing gets published that has not first passed every check CI runs —
+      # a tag should never be a way around them.
       - name: Check the Java and native sides agree
         run: python3 tools/check_jni_bindings.py
 
@@ -71,9 +76,18 @@ jobs:
       - name: Check the tree for work that is not ours
         run: python3 tools/check_provenance.py
 
+      - name: Lint the build scripts
+        # Same step as ci.yml, for the same reason: a tag must not be a way
+        # around it either.
+        run: shellcheck -S style tools/*.sh gradlew
+
       - name: Compile the bindings against the framework alone
         run: |
-          javac -source 11 -target 11 -Xlint:-options \
+          # --release 11 rather than -source/-target: it also selects the
+          # right boot class path, so nothing has to be suppressed with
+          # -Xlint:-options, and -Xlint:all runs at full strength. Same
+          # reason as the identical step in ci.yml.
+          javac --release 11 -Xlint:all \
             -cp "$ANDROID_SDK/platforms/android-36/android.jar" \
             -d /tmp/jni-classes \
             jni_bindings/src/main/java/me/shadow/eclipselauncher/sdl/*.java
