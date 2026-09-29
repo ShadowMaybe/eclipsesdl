@@ -94,6 +94,16 @@ permissions — the host application decides all of that.
   The same function, and five others, dereferenced the result of `getContext()`
   with no null check; a launcher that has already been torn down would have
   crashed in JNI rather than returned "unavailable".
+* `SDL_RequestAndroidPermission` queues the request and returns before it calls
+  into Java, so a Java side that answered by returning would leave the entry on
+  the queue with nothing left to pop it — the app's callback never ran and it
+  waited on an answer nobody was going to send. It now refuses explicitly.
+* Audio devices were announced exactly once per process. SDL destroys the
+  devices it owns before it asks Java to stop listening, so on the next
+  `SDL_InitAudio` the bookkeeping rejected every device as already reported,
+  nothing was announced, and that session had no default playback device.
+  Unregistering now forgets what was reported, so a re-registration re-announces
+  from an empty list — the only list SDL has left to read.
 
 ---
 
@@ -142,15 +152,18 @@ TAG=v0.1.0 sh tools/package_release.sh
 `tools/build_native.sh` fetches eclipseexec at a pinned tag, builds both
 projects per ABI, and stages the results into
 `jni_bindings/src/main/jniLibs/<abi>/` where Gradle picks them up. It resets
-that directory first, so an ABI you did not build cannot ride along.
+that directory first, so an ABI you did not build cannot ride along, and it
+strips the staged copies — the debug sections stay in the build tree, and
+what ships in the AAR and in the release zips is the same bytes.
 
 Checks, all of which run in CI:
 
 | Command | Answers |
 |---|---|
 | `python3 tools/check_jni_bindings.py` | Do the C tables, the C method lookups and the Java agree? |
+| `… --emit-contract - \| diff - docs/jni-contract.md` | Does the published contract still describe what the checker enforces? |
 | `python3 tools/check_provenance.py` | Is there anything in this tree — source, strings, or a built `.so` — that is not Eclipse's? |
-| `sh tools/check_exports.sh <so> <allow-regex> <syms>` | Does the library export exactly what SDL's version script says, including `JNI_OnLoad`? |
+| `sh tools/check_exports.sh <so> <allow-regex> <syms>` | Does the shipped library export exactly what SDL's version script says, including `JNI_OnLoad`? |
 | `javac -source 11 -cp android.jar …` | Do the bindings compile against the framework alone? |
 
 ---
