@@ -48,8 +48,6 @@
 typedef void *(*eclipse_acq_egl_fn)(void);
 typedef void *(*eclipse_acq_vulkan_fn)(void);
 typedef void (*eclipse_preload_vulkan_fn)(void);
-typedef bool (*eclipse_set_affinity_fn)(bool);
-typedef bool (*eclipse_affinity_enabled_fn)(void);
 typedef void (*eclipse_make_affine_fn)(void);
 typedef const char *(*eclipse_last_error_fn)(void);
 
@@ -58,6 +56,14 @@ typedef const char *(*eclipse_last_error_fn)(void);
  * ever drift apart, this fails to compile instead of failing at runtime with a
  * misdeclared call. The typeof is unevaluated, so taking the address here does
  * not make libSDL3.so depend on the library either.
+ *
+ * Only the symbols this file actually resolves are checked here. Affinity is
+ * deliberately not among them: SDL gates it with
+ * SDL_HINT_ECLIPSE_BIGCORE_AFFINITY by choosing whether to call
+ * eclipseexec_make_bigcore_affine() at all, so reaching into eclipseexec's own
+ * global switch as well would hand one setting two owners — and asserting a
+ * prototype for a call that never happens only buys a build failure when an
+ * unrelated upstream signature changes.
  */
 #if defined(__clang__) || defined(__GNUC__)
 typedef char eclipse_check_acq_egl[
@@ -66,10 +72,6 @@ typedef char eclipse_check_acq_vulkan[
     __builtin_types_compatible_p(eclipse_acq_vulkan_fn, __typeof__(&eclipseexec_acq_vulkan_handle)) ? 1 : -1];
 typedef char eclipse_check_preload[
     __builtin_types_compatible_p(eclipse_preload_vulkan_fn, __typeof__(&eclipseexec_preload_vulkan)) ? 1 : -1];
-typedef char eclipse_check_set_affinity[
-    __builtin_types_compatible_p(eclipse_set_affinity_fn, __typeof__(&eclipseexec_set_affinity_enabled)) ? 1 : -1];
-typedef char eclipse_check_affinity_enabled[
-    __builtin_types_compatible_p(eclipse_affinity_enabled_fn, __typeof__(&eclipseexec_affinity_enabled)) ? 1 : -1];
 typedef char eclipse_check_make_affine[
     __builtin_types_compatible_p(eclipse_make_affine_fn, __typeof__(&eclipseexec_make_bigcore_affine)) ? 1 : -1];
 typedef char eclipse_check_last_error[

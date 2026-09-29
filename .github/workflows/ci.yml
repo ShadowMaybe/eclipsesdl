@@ -114,10 +114,16 @@ jobs:
             sh tools/check_exports.sh "build/native/$abi/libSDL3.so" \
               '^(JNI_OnLoad|SDL_.*)$' JNI_OnLoad
 
+            # Exactly the symbols SDL_eclipse.c resolves. Asking for more
+            # would break on an upstream rename we never see; asking for fewer
+            # would let the handover quietly turn itself off at run time
+            # instead of failing here.
             sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipseexec.so" \
               '^(JNI_OnLoad|JNI_OnUnload|eclipseexec_.*)$' \
-              JNI_OnLoad JNI_OnUnload eclipseexec_prepare_egl \
-              eclipseexec_acq_egl_handle eclipseexec_acq_vulkan_handle
+              JNI_OnLoad JNI_OnUnload \
+              eclipseexec_acq_egl_handle eclipseexec_acq_vulkan_handle \
+              eclipseexec_preload_vulkan eclipseexec_make_bigcore_affine \
+              eclipseexec_last_error eclipseexec_renderspec
 
             if [ "$abi" = arm64-v8a ]; then
               sh tools/check_exports.sh "build/native/eclipseexec/$abi/libeclipsehook.so" \
